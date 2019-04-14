@@ -13,13 +13,13 @@ The dataset can be downloaded through the [UCI Machine learning Repository](http
 
 The data contains 1030 examples and the following features:
 
-* Input Variable: Cement (kg in a m^3^ mixture)
-* Input Variable: Blast Furnace Slag (kg in a m^3^ mixture)
-* Input Variable: Fly Ash (kg in a m^3^ mixture)
-* Input Variable: Water (kg in a m^3^ mixture)
-* Input Variable: Superplasticizer (kg in a m^3^ mixture)
-* Input Variable: Coarse Aggregate (kg in a m^3^ mixture)
-* Input Variable: Fine Aggregate (kg in a m^3^ mixture)
+* Input Variable: Cement (kg in a m^3 mixture)
+* Input Variable: Blast Furnace Slag (kg in a m^3 mixture)
+* Input Variable: Fly Ash (kg in a m^3 mixture)
+* Input Variable: Water (kg in a m^3 mixture)
+* Input Variable: Superplasticizer (kg in a m^3 mixture)
+* Input Variable: Coarse Aggregate (kg in a m^3 mixture)
+* Input Variable: Fine Aggregate (kg in a m^3 mixture)
 * Input Variable: Age (days)
 * Output Variable: Concrete compressive strength (MPa)
 
