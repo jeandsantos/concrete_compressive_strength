@@ -1,0 +1,1043 @@
+---
+title: "Exploring the Use of Modern Search Methods in R for Maximizing the Compressive Strength of Concrete"
+subtitle: "Use and Comparison of Local and Population-based Search Methods for Concrete Mixture Optimization"
+author: "Jean Dos Santos"
+date: "04 April 2019"
+output:
+  html_document:
+    code_folding: show
+    df_print: paged
+    highlight: tango
+    number_sections: yes
+    rows.print: 10
+    theme: cerulean
+    toc: yes
+    toc_depth: 3
+    toc_float:
+      collapsed: yes
+      smooth_scroll: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, error = FALSE, warning = FALSE, comment = NA, fig.align = 'center')
+options(scipen=3, digits = 5)
+```
+
+# Introduction
+
+## Objective
+
+The objective of this document is to compare various search methods to find a concrete mixture with the highest predicted compressive strength. 
+
+## Prediction of Compressive Strength
+
+The compressive strength was predicted with neural networks using model averaging (see [`avNNet`](https://www.rdocumentation.org/packages/caret/versions/6.0-80/topics/avNNet)). The dataset used to train the predictive model comes from the research paper [*Modeling of strength of high performance concrete using artificial neural networks*](https://www.sciencedirect.com/science/article/pii/S0008884698001653) by I-Cheng Yeh published in *Cement and Concrete Research*, Vol. 28, No. 12, pp. 1797-1808 (1998). The compressive strength of concrete was predicted using its age and composition. 
+
+The dataset can be downloaded through the [UCI Machine learning Repository](http://archive.ics.uci.edu/ml/datasets/Concrete+Compressive+Strength). The final model was tuned using the [`caret`](https://topepo.github.io/caret/index.html) package. 
+
+The data contains 1030 examples and the following features:
+
+* Input Variable: Cement (kg in a m^3^ mixture)
+* Input Variable: Blast Furnace Slag (kg in a m^3^ mixture)
+* Input Variable: Fly Ash (kg in a m^3^ mixture)
+* Input Variable: Water (kg in a m^3^ mixture)
+* Input Variable: Superplasticizer (kg in a m^3^ mixture)
+* Input Variable: Coarse Aggregate (kg in a m^3^ mixture)
+* Input Variable: Fine Aggregate (kg in a m^3^ mixture)
+* Input Variable: Age (days)
+* Output Variable: Concrete compressive strength (MPa)
+
+## Search Methods
+
+Seven search methods are tested:  
+
+- Grid search (GS)
+- Random search (RS)
+- Simulated Annealing (SA)
+- Genetic algorithm (GA)
+- Islands genetic algorithm (ISLGA)
+- Differential evolution (DE)
+- Particle swarm optimization (PSO)
+
+Grid and random search will be used as benchmarks for comparing the other search methods.
+
+***
+
+# Install and Load Packages
+
+The `pacman` package is used to install and load all necessary packages.
+
+```{r message=FALSE, warning=FALSE, prompt=FALSE, error=FALSE}
+# Install and load packages
+if (!require(pacman)) {install.packages("pacman", verbose = F, quiet = T)} else require(pacman, quietly = T)
+suppressWarnings(pacman::p_load(plyr, caret, tidyverse, tidyselect, readr, readxl, parallel, doParallel, gridExtra, pso, GA, GenSA, DEoptim, GGally, ggfortify, broom, knitr, kableExtra, install = T))
+```
+
+***
+
+# Importing the dataset
+
+The dataset is downloaded from the data the [UCI Machine Learning Data Repository](http://archive.ics.uci.edu/ml/datasets/Concrete+Compressive+Strength):
+
+```{r message=FALSE, warning=FALSE, prompt=FALSE, fig.align='center'}
+# Load library
+# download.file(url = "http://archive.ics.uci.edu/ml/machine-learning-databases/concrete/compressive/Concrete_Data.xls", destfile = "Concrete_Data.xls", method = "curl", quiet = TRUE)
+
+# Import Data
+concrete_data <- read_xls(path = "Concrete_Data.xls", sheet = 1)
+```
+
+***
+
+# Exploratory Data Analysis
+
+Check the structure of the dataset:
+
+```{r message=FALSE, warning=FALSE, prompt=FALSE, fig.align='center'}
+# Check structure of the dataset
+glimpse(concrete_data)
+
+# Rename variables
+colnames(concrete_data) <- c("Cement", "Slag", "Ash", "Water", "Superplasticizer", "Coarse_Aggregate", "Fine_Aggregate", "Age", "Strength")
+
+ingredients <- c("Cement", "Slag", "Ash", "Water", "Superplasticizer", "Coarse_Aggregate", "Fine_Aggregate")
+```
+
+The values of the components of the concrete were recalculated so their values range from 0 to 1.
+
+```{r message=FALSE, warning=FALSE, prompt=FALSE, fig.align='center'}
+# Recalculate composition as proportions
+concrete_data[, ingredients] <- t(apply(X = concrete_data[, ingredients], MARGIN = 1, FUN = function(x) {x/sum(x)}))
+
+# Print summary statistics
+glimpse(concrete_data)
+```
+
+Print statistics for each variable and check for missing (NA) values:
+
+```{r message=FALSE, warning=FALSE}
+concrete_data %>% 
+  signif(5) %>% 
+  gather(key = "Feature", value = "Quantity") %>% 
+  dplyr::group_by(Feature) %>% 
+  summarise(
+    `NA` = sum(is.array(Quantity), na.rm = T),
+    Min = min(Quantity, na.rm = T),
+    `1st Quartile` = quantile(Quantity, probs = 0.25, na.rm = T),
+    Median = median(Quantity, na.rm = T),
+    Mean = mean(Quantity, na.rm = T),
+    `3rd Quartile` = quantile(Quantity, probs = 0.75),
+    Max = max(Quantity, na.rm = T)
+  ) %>% 
+  kable(digits = 4, align = "c") %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F, position = "center")
+```
+
+There are no NA values in the dataset however input variables have different ranges of values.
+
+```{r message=FALSE, warning=FALSE}
+# Plots histograms of features
+concrete_data %>% 
+  gather(key = Variable, value = Value) %>% 
+  ggplot() +
+    geom_histogram(aes(x = Value), bins = 20, fill = "#08519c") +
+    facet_wrap(~Variable, scales='free') +
+    theme_bw() +
+    theme(aspect.ratio = 0.5, axis.title = element_blank(), panel.grid = element_blank())
+```
+
+***
+
+# Obtaining Optimal Concrete Mixtures
+
+The aim is to find a concrete mixture with the highest compressive strength possible. Several search methods will be tested in order to obtain a concrete mixture with the highest predicted compressive strength. 
+
+The compressive strength will be obtained from a predictive model previously obtained from training data. This will be done with neural networks using model averaging that were obtained using the `caret` package.
+
+Since the compressive strength generally increases with ageing and we are not interested in optimizing for this variable, predictions will be made using always using the same number of days of aging. All predictions will be made with the concrete age fixed at 28 days.
+
+```{r message=FALSE, warning=FALSE, prompt=FALSE, fig.align='center'}
+# Import predictive model
+avNNet_model_final<- readRDS(file = "Models/avNNet_model.rds")
+
+# Define minimum and maximum values for each input
+margin <- 0.05 
+Cement_min_max <- c(min(concrete_data$Cement)*(1-margin), 
+                    max(concrete_data$Cement)*(1+margin)) %>% round(4)
+Slag_min_max <- c(min(concrete_data$Slag)*(1-margin), 
+                  max(concrete_data$Slag)*(1+margin)) %>% round(4)
+Ash_min_max <- c(min(concrete_data$Ash)*(1-margin), 
+                 max(concrete_data$Ash)*(1+margin)) %>% round(4)
+Superplasticizer_min_max <- c(min(concrete_data$Superplasticizer)*(1-margin),
+                              max(concrete_data$Superplasticizer)*(1+margin)) %>% round(4)
+Coarse_Aggregate_min_max <- c(min(concrete_data$Coarse_Aggregate)*(1-margin),
+                              max(concrete_data$Coarse_Aggregate)*(1+margin)) %>% round(4)
+Fine_Aggregate_min_max <- c(min(concrete_data$Fine_Aggregate)*(1-margin),
+                            max(concrete_data$Fine_Aggregate)*(1+margin)) %>% round(4)
+
+lower_limits <- c(Cement_min_max[1], Slag_min_max[1], Ash_min_max[1], Superplasticizer_min_max[1], Coarse_Aggregate_min_max[1], Fine_Aggregate_min_max[1])
+upper_limits <- c(Cement_min_max[2], Slag_min_max[2], Ash_min_max[2], Superplasticizer_min_max[2], Coarse_Aggregate_min_max[2], Fine_Aggregate_min_max[2])
+
+# Set fixed value for aging
+days_aging <- 28
+
+# Set minimum and maxium acceptable amount of water in each mixture
+maximum_water <- (max(concrete_data$Water)*1.05) %>% round(4) 
+minimum_water <- (min(concrete_data$Water)*0.95) %>% round(4)
+
+n_best_solutions <- 5 # Number of best solutions to keep (for selected methods)
+
+# Optional: Create a starting point for the genetic algorithm
+starting_point <- sapply(X = concrete_data, FUN = mean) %>% t() %>% data.frame() %>% select("Cement", "Slag", "Ash", "Superplasticizer", "Coarse_Aggregate", "Fine_Aggregate") %>% as.matrix()
+```
+
+***
+
+## Grid Search
+
+Grid search is a blind search method that reduces the space of solutions by implementing a regular hyper dimensional search space. The main downside of this method is the high computational demands of problems with several dimensions, this can be balanced by increasing the grid search step.
+
+To perform a grid search, a search grid with a wide range of values for each ingredient was created. To exclude unfeasible solutions, combinations with too much or too little water were excluded from the grid.
+
+### Create Search Grid
+
+```{r message=FALSE, warning=FALSE, prompt=FALSE, fig.align='center'}
+# Create search grid
+Search_Grid <- expand.grid(
+  Cement = seq(Cement_min_max[1], Cement_min_max[2], length.out = 18),
+  Slag = seq(Slag_min_max[1], Slag_min_max[2], length.out = 18),
+  Ash = seq(Ash_min_max[1], Ash_min_max[2], length.out = 18),
+  Superplasticizer = seq(Superplasticizer_min_max[1], Superplasticizer_min_max[2], length.out = 18),
+  Coarse_Aggregate = seq(Coarse_Aggregate_min_max[1], Coarse_Aggregate_min_max[2], length.out = 18),
+  Fine_Aggregate = seq(Fine_Aggregate_min_max[1], Fine_Aggregate_min_max[2], length.out = 18)
+  ) 
+
+# Set threshold for minimum and maximum solids: remove solutions with too little or too much water
+minimum_solids <- 1-maximum_water 
+maximum_solids <- 1-minimum_water
+
+# Remove solutions with solids content below minimum threshold (too much water) or above maximum threshold (not enough water)
+Search_Grid <- Search_Grid[rowSums(Search_Grid) >= minimum_solids & 
+                           rowSums(Search_Grid) <= maximum_solids, ] 
+
+# Add column for water content
+Search_Grid$Water <- 1-rowSums(Search_Grid)
+Search_Grid$Age <- 28
+
+# Tabulate summary statistics of search grid
+Search_Grid %>% 
+  signif(5) %>% 
+  gather(key = "Feature", value = "Quantity") %>% 
+  dplyr::group_by(Feature) %>% 
+  summarise(
+    Min = min(Quantity, na.rm = T),
+    `1st Quartile` = quantile(Quantity, probs = 0.25, na.rm = T),
+    Median = median(Quantity, na.rm = T),
+    Mean = mean(Quantity, na.rm = T),
+    `3rd Quartile` = quantile(Quantity, probs = 0.75),
+    Max = max(Quantity, na.rm = T)
+  ) %>% 
+  kable(digits = 4, align = "c") %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F, position = "center")
+```
+
+The search grid has a `r round(nrow(Search_Grid)/1000000,2)` million different solutions.
+
+### Generate Predictions
+
+Use the model to generate predictions for each concrete mixture in the grid:
+
+```{r message=FALSE, warning=FALSE, prompt=FALSE, fig.align='center'}
+# Make predictions on search grid
+GS_T0 <- Sys.time() # record start time
+
+Search_Grid$Strength <- predict(avNNet_model_final, Search_Grid)
+
+GS_T1 <- Sys.time() # record end time
+(GS_Time <-  GS_T1 - GS_T0)
+
+# Save the n best solutions of each model into a single dataframe
+avNNet_GS <- Search_Grid %>%
+  arrange(desc(Strength)) %>%
+  .[1:n_best_solutions, ] %>%  # select n best solutions
+  mutate(Method = "Grid Search") %>% 
+  select(Method, Strength, everything())
+
+avNNet_GS %>% 
+  arrange(desc(Strength)) %>% 
+  knitr::kable(caption = "Summary of the best solutions", align = "c", digits = 4, col.names = gsub("_", " ", colnames(avNNet_GS))) %>%
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F, position = "center") 
+```
+
+```{r message=FALSE, warning=FALSE, echo=FALSE, include=FALSE, message=FALSE, eval=TRUE}
+rm(Search_Grid); gc(full = T, verbose = F)
+```
+
+The grid search obtained a concrete mixture with a maximal predicted compressive strength of `r avNNet_GS %>% arrange(desc(Strength)) %>% .[1,2] %>% round(3)` MPa.
+
+***
+
+## Random Search
+
+For performing a random search, a grid of solutions with randomly generated values for each variable is created. Values for each variable are randomly generated using the `runif()` function. Only one cycle of random search was executed.
+
+### Create Random Solutions
+
+Create random solutions of a wide range of ingredient combinations to perform a random search. To exclude unfeasible solutions, combinations with too much or too little water content were excluded.
+
+```{r message=FALSE, warning=FALSE, prompt=FALSE, fig.align='center'}
+set.seed(1)
+Random_Solutions <- expand.grid(
+  Cement = runif(18, Cement_min_max[1], Cement_min_max[2]),
+  Slag = runif(18, Slag_min_max[1], Slag_min_max[2]),
+  Ash = runif(18, Ash_min_max[1], Ash_min_max[2]),
+  Superplasticizer = runif(18, Superplasticizer_min_max[1], Superplasticizer_min_max[2]),
+  Coarse_Aggregate = runif(18, Coarse_Aggregate_min_max[1], Coarse_Aggregate_min_max[2]),
+  Fine_Aggregate = runif(18, Fine_Aggregate_min_max[1], Fine_Aggregate_min_max[2])
+  )
+
+# Set threshold for minimum and maximum solids: remove solutions with too little or too much water
+minimum_solids <- 1-maximum_water 
+maximum_solids <- 1-minimum_water
+
+# Remove solutions with solids content below minimum threshold (too much water) or above maximum threshold (not enough water)
+Random_Solutions <- Random_Solutions[rowSums(Random_Solutions) >= minimum_solids & 
+                                     rowSums(Random_Solutions) <= maximum_solids, ] 
+
+# Add column for water content
+Random_Solutions$Water <- 1-rowSums(Random_Solutions)
+Random_Solutions$Age <- 28
+
+# Tabulate summary statistics
+Random_Solutions %>% 
+  signif(5) %>% 
+  gather(key = "Feature", value = "Quantity") %>% 
+  dplyr::group_by(Feature) %>% 
+  summarise(
+    Min = min(Quantity, na.rm = T),
+    `1st Quartile` = quantile(Quantity, probs = 0.25, na.rm = T),
+    Median = median(Quantity, na.rm = T),
+    Mean = mean(Quantity, na.rm = T),
+    `3rd Quartile` = quantile(Quantity, probs = 0.75),
+    Max = max(Quantity, na.rm = T)
+  ) %>% 
+  kable(digits = 4, align = "c") %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F, position = "center")
+```
+
+There are `r round(nrow(Random_Solutions)/1000000,2)` million different random solutions.
+
+### Generate Predictions
+
+Use the model to generate predictions for each concrete mixture:
+
+```{r message=FALSE, warning=FALSE, prompt=FALSE, fig.align='center'}
+# Make predictions 
+RS_T0 <- Sys.time() # record start time
+
+Random_Solutions$Strength <- predict(avNNet_model_final, Random_Solutions)
+
+RS_T1 <- Sys.time() # record end time
+(RS_Time <-  RS_T1 - RS_T0)
+
+# Save the n best solutions of each model into a single dataframe
+avNNet_RS <- Random_Solutions %>%
+  arrange(desc(Strength)) %>%
+  .[1:n_best_solutions, ] %>%  # select n best solutions
+  mutate(Method = "Random Search") %>% 
+  select(Method, Strength, everything())
+
+# Tabulate best solutions
+avNNet_RS %>% 
+  arrange(desc(Strength)) %>% 
+  knitr::kable(caption = "Summary of the best solutions", align = "c", digits = 4, col.names = gsub("_", " ", colnames(avNNet_RS))) %>%
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F, position = "center") 
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=FALSE, include=FALSE, message=FALSE, eval=TRUE}
+rm(Random_Solutions); gc(full = T, verbose = F)
+```
+
+The random search obtained a concrete mixture with a maximal predicted compressive strength of `r avNNet_RS %>% arrange(desc(Strength)) %>% .[1,2] %>% round(3)` MPa.
+
+***
+
+## Simulated Annealing
+
+[Simulated annealing](https://en.wikipedia.org/wiki/Simulated_annealing) (SA) is a local search method, i.e. a method that focuses its attention within the local neighbourhood of an initial starting point. This method is inspired on the heat treatment of metals where a material is heated above its recrystallization temperature to increase its ductility and then cooled under controlled conditions.
+
+The SA algorithm starts with a starting point (randomly generated or provided) and a specified initial temperature that controls the probability of accepting inferior solutions. At each successive iteration the temperature decreases making the exploration of new and more different solutions less probable.
+
+The [`GenSA`](https://cran.r-project.org/web/packages/GenSA/index.html) package will be used to optimize the concrete mixture using simulated annealing. The main search parameters for this implementation of SA are:  
+
+- the initial temperature (`temperature`) 
+- the maximum number of iterations (`maxit`)
+
+These parameters can be increased to improve the performance of complex optimization problems.
+
+```{r message=FALSE, warning=FALSE, prompt=FALSE, error=FALSE}
+# Set parameter settings for search algorithm
+max_iter <- 500 # maximum number of iterations
+pop_size <- 10 # population size
+```
+
+We will use the dataset to generate a set of `r pop_size` starting points. These will be selected by creating a subset of the `r pop_size` most dissimilar solutions from a randomly selected solution.
+
+```{r message=FALSE, warning=FALSE, prompt=FALSE, fig.align='center'}
+# Randomly select one sample from the data as a starting point
+set.seed(1)
+start_index <- sample(x = 1:nrow(concrete_data), size = 1)
+start_point <- concrete_data[start_index, ]
+
+# Select the n most dissimilar observations from the starting point
+n_observations <- pop_size
+index_starting_observations <- caret::maxDissim(a = start_point, b = concrete_data, n = n_observations)
+starting_observations <- concrete_data[index_starting_observations, ]
+
+# Remove water from subset
+starting_observations <- starting_observations %>% dplyr::select(-Water)
+```
+
+Because we require all the solutions to add to one, the search procedure will be run without water and the proportion of water will be determined by subtracting the sum of the proportion of all ingredients minus 1.
+
+In order to assess each solution, a custom function to predict the compressive strength of each solution is created.
+
+```{r message=FALSE, warning=FALSE, prompt=FALSE, fig.align='center'}
+# Create custom function for assessing solutions
+eval_function <- function(x, model, min_water, max_water, age = 28) {
+
+  x1 <- x[1]; x2 <- x[2]; x3 <- x[3]; x4 <- x[4]; x5 <- x[5]; x6 <- x[6]
+  
+  # Create dataframe with proportion of each solid component
+  solution_df <- data.frame(Cement = x1, 
+                            Slag = x2, 
+                            Ash = x3, 
+                            Superplasticizer = x4, 
+                            Coarse_Aggregate = x5, 
+                            Fine_Aggregate = x6)
+  
+  # Calculate proportion of water
+  solution_df$Water <- 1-rowSums(solution_df) # Water = 1-sum(solids)
+  
+  # Create death-penalty score for solutions with water content outside acceptable range
+  if(solution_df$Water >= min_water & solution_df$Water <= max_water & rowSums(solution_df) == 1) {
+
+    # Add pre-defined age to temporary solution
+    solution_df$Age <- age
+    
+    return(-predict(model, solution_df)) # maximize strength
+    
+  } else {
+    
+    return(0)
+  }
+
+}
+```
+
+
+```{r message=FALSE, warning=FALSE, prompt=FALSE, fig.align='center'}
+set.seed(1)
+SA_output <- starting_observations
+SA_output$Water <- NA
+SA_output$Strength <- NA
+i_max <- NA
+trace_max_SA <- NA
+
+SA_T0 <- Sys.time() # record start time
+
+# Repeat the process of finding the optimal solution for each starting observation
+for(i in 1:nrow(SA_output)) {
+  results <- GenSA::GenSA(
+                          par = SA_output[i, 1:6] %>% as.matrix(),
+                          fn = eval_function, 
+                          lower = lower_limits,
+                          upper = upper_limits,
+                          control = list(
+                            maxit = max_iter/pop_size, 
+                            verbose = F),
+                          model = avNNet_model_final,
+                          min_water = minimum_water,
+                          max_water = maximum_water
+                          )
+  
+  # Save the predictions
+  SA_output$Strength[i] <- abs(results$value)
+  # Save the input variables
+  SA_output[i, 1:6] <- results$par
+
+  if (SA_output$Strength[i] == max(SA_output$Strength, na.rm = T)) {
+    i_max <- i
+    trace_SA_max <- results$trace.mat
+  }
+}
+
+SA_T1 <- Sys.time() # record end time
+(SA_Time <-  SA_T1 - SA_T0)
+
+# Save parameters of n best solutions
+avNNet_SA <- SA_output %>% 
+  arrange(desc(Strength)) %>% 
+  .[1:n_best_solutions, ] %>%  
+  mutate(Method = "Simulated Annealling", 
+         Water = 1 - (Cement + Slag + Ash + Superplasticizer + Coarse_Aggregate + Fine_Aggregate), Age = days_aging) %>% 
+  select(Method, Strength, everything()) 
+
+# Tabulate best solutions
+avNNet_SA %>% 
+  arrange(desc(Strength)) %>% 
+  knitr::kable(caption = "Summary of the best solutions", align = "c", digits = 4, col.names = gsub("_", " ", colnames(avNNet_SA))) %>%
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F, position = "center")
+```
+
+Simulated annealing obtained a concrete mixture with a maximal predicted compressive strength of `r avNNet_SA %>% arrange(desc(Strength)) %>% .[1,2] %>% .[[1]] %>% round(3)` MPa. 
+
+***
+
+## Genetic Algorithm
+
+[Genetic algorithms](https://en.wikipedia.org/wiki/Genetic_algorithm) (GA) are stochastic, population-based search methods inspired by Darwin's theory of evolution. Genetic algorithms mimic the evolution of living organisms by creating and using a pool of candidate solutions to search for the global optimum. Although population-based methods tend to require more computations than single-state methods (e.g. hill climbing and simulated annealing), they work better as global optimisation methods as they tend to explore a wider range of regions in the search space.
+
+The algorithm starts by creating a random population of feasible solutions. These are created within minimum and maximum values set by the user for each variable (gene). At each iteration (also known as generation) the individuals are assessed using a fitness function. A pre-defined number or percentage of the best individuals are then selected for the next generation (defined by elitism). This selected cohort can be recombined and modified. The probability of these two events is determined by the crossover and mutation rate, respectively. 
+
+Each generation of individuals goes through the steps of assessment, selection, crossover and mutation for a predefined number of iterations or until another stopping criteria is met.
+
+The main parameters of a genetic algorithm are:  
+
+- population size
+- elitism: number of best individuals kept
+- maximum number of iterations
+- fitness function
+- mutation rate
+- crossover rate
+
+A random population seed may also be used for reproducibility.
+
+The [`GA`](https://cran.r-project.org/web/packages/GenSA/index.html) package developed by [Luca Scrucca](https://www.jstatsoft.org/article/view/v053i04) will be used to optimize the concrete mixture using the genetic algorithm. The package provides the `ga()` function whose main arguments are:  
+
+- `fitness`: function to assess the fitness of the solutions
+- `lower` and `upper`: lower and upper limits for each parameter
+- `popSize`: population size
+- `maxiter`: maximum number of iterations
+- `pmutation`: probability of mutation
+- `pcrossover`: probability of crossover
+- `elitism`: fraction of best solutions to survive each generation
+
+```{r message=FALSE, warning=FALSE, prompt=FALSE, error=FALSE}
+# Set parameter settings for search algorithm
+max_iter <- 500 # maximum number of iterations
+pop_size <- 100 # population size
+```
+
+```{r message=FALSE, warning=FALSE, prompt=FALSE, fig.align='center'}
+# Create custom function for assessing solutions
+eval_function <- function(x, model) {
+  
+  x1 <- x[1]; x2 <- x[2]; x3 <- x[3]; x4 <- x[4]; x5 <- x[5]; x6 <- x[6]
+
+  # Create dataframe with proportion of each solid component
+  solution_df <- data.frame(Cement = x1, 
+                            Slag = x2, 
+                            Ash = x3, 
+                            Superplasticizer = x4, 
+                            Coarse_Aggregate = x5, 
+                            Fine_Aggregate = x6)
+  
+  # Calculate proportion of water
+  solution_df$Water <- 1-rowSums(solution_df) # Water = 1-sum(solids)
+  
+  # Create death-penalty score for solutions with water content outside acceptable range
+  if(solution_df$Water >= minimum_water & solution_df$Water <= maximum_water & rowSums(solution_df) == 1) {
+
+    # Add pre-defined age to temporary solution
+    solution_df$Age <- days_aging
+    
+    return(predict(model, solution_df))
+    
+  } else {
+    
+    return(0)
+  }
+
+}
+```
+
+A Local search algorithm is incorporated with the GA by setting `optim = TRUE`.
+
+```{r message=FALSE, warning=FALSE, prompt=FALSE, fig.align='center'}
+set.seed(1)
+n_cores <- detectCores()-1
+
+GA_T0 <- Sys.time() # record start time
+
+# Run Genetic Algorithm
+GA_output <- GA::ga(
+  type = "real-valued", 
+  fitness = function(x) eval_function(x, model = avNNet_model_final), 
+  lower = lower_limits,
+  upper = upper_limits,
+  popSize = pop_size, # population size
+  maxiter = max_iter, # maximum nuber of iteriation
+  pmutation = 0.3, # probability of mutation
+  elitism = 0.3, # percentage elitism
+  suggestions = starting_point, # Optional: starting point for genetic algorithm
+  parallel = n_cores, 
+  monitor = FALSE,
+  optim = TRUE, # incorporate local search
+  optimArgs = list(method = "L-BFGS-B",
+                    poptim = 0.20,
+                    pressel = 0.5,
+                    control = list(fnscale = -1, maxit = 100)), # parameters for local search
+  seed = 1
+  )
+
+GA_T1 <- Sys.time() # record end time
+(GA_Time <-  GA_T1 - GA_T0)
+
+# Print summary of GA
+summary(GA_output)
+
+GA_summary <- GA_output@summary %>% 
+  .[,c("max", "mean", "median")] %>% 
+  data.frame() %>% 
+  select(Best = max, Mean = mean, Median = median) %>% 
+  mutate(Iteration = 1:max_iter) 
+
+# Plot results
+GA_summary %>% 
+  gather(key = "Parameter", value = "Value", -Iteration) %>% 
+  ggplot(mapping = aes(x = Iteration, y = Value, col = Parameter)) +
+    geom_line() +
+    theme_bw() + 
+    theme(aspect.ratio = 0.7) +
+    scale_color_brewer(type = "qual", palette = "Set1") +
+    labs(x = "Iteration", y = "Compressive Strength (Predicted)", title = "Best predicted compressive strength at each iteration", subtitle = "Results using Genetic Algorithm")
+
+# Save best solution
+avNNet_GA <- data.frame(Method = "Genetic Algorithm",
+                        Strength = GA_output@fitnessValue,
+                        Cement = GA_output@solution[1], 
+                        Slag = GA_output@solution[2], 
+                        Ash = GA_output@solution[3], 
+                        Superplasticizer = GA_output@solution[4], 
+                        Coarse_Aggregate = GA_output@solution[5], 
+                        Fine_Aggregate = GA_output@solution[6]) %>% 
+  mutate(Water = 1 - (Cement + Slag + Ash + Superplasticizer + Coarse_Aggregate + Fine_Aggregate), 
+         Age = days_aging)
+
+# Tabulate best solutions
+avNNet_GA %>% 
+  arrange(desc(Strength)) %>% 
+  knitr::kable(caption = "Summary of the best solutions", align = "c", digits = 4, col.names = gsub("_", " ", colnames(avNNet_GA))) %>%
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F, position = "center") 
+```
+
+The genetic algorithm obtained a concrete mixture with a maximal predicted compressive strength of `r avNNet_GA %>% arrange(desc(Strength)) %>% .[1,2] %>% round(3)` MPa.
+
+***
+
+## Islands Genetic Algorithm
+
+Islands Genetic Algorithms (GAISL) are a variant of Genetic Algorithms where the population of solutions is partitioned in a set of subpopulations. Each island performs it runs its own GA with occasional individuals being transfered from one island to another.
+
+The GAISL is run using the `gaisl()` function from the `GA` package. In addition to the arguments of the `ga()` function, there are additional argument to control the number of islands and migrate rate:  
+
+- `numIslands`: number of islands
+- `migrationRate`: proportion of individuals that migrate between islands in each exchange
+- `migrationInterval`: number of iterations at which exchanges are performed.
+
+```{r message=FALSE, warning=FALSE, prompt=FALSE, error=FALSE}
+# Set parameter settings for search algorithm
+max_iter <- 500 # maximum number of iterations
+pop_size <- 100 # population size
+```
+
+A Local search algorithm is incorporated with the GAISL algorithm by setting `optim = TRUE`. Four islands will be used (`numIslands = 4`) with a migration rate (`migrationRate`) of 0.1 done at each 10 interations (`migrationInterval = 10`).
+
+```{r message=FALSE, warning=FALSE, prompt=FALSE, fig.align='center'}
+set.seed(1)
+n_cores <- detectCores()-1
+
+GAISL_T0 <- Sys.time() # record start time
+
+# run GAISL algorithm
+GAISL_output <- GA::gaisl(
+  type = "real-valued", 
+  fitness = function(x) eval_function(x, model = avNNet_model_final), 
+  lower = lower_limits,
+  upper = upper_limits,
+  popSize = pop_size, # population size
+  maxiter = max_iter, # maximum nuber of iteriation
+  pmutation = 0.3, # probability of mutation
+  elitism = 0.3, # percentage elitism
+  numIslands = 4, 
+  migrationRate = 0.1, 
+  migrationInterval = 10,
+  monitor = F,
+  # suggestions = starting_point, # Optional: starting point for genetic algorithm
+  parallel = n_cores,
+  optim = T, # perform local search
+  optimArgs = list(method = "L-BFGS-B",
+                    poptim = 0.20,
+                    pressel = 0.5,
+                    control = list(fnscale = -1, maxit = 100)), # paramaters for local search
+  seed = 1)
+
+GAISL_T1 <- Sys.time() # record end time
+(GAISL_Time <-  GAISL_T1 - GAISL_T0)
+
+summary(GAISL_output)
+
+# Save trace data from each island
+GAISL_summary <- data.frame(Iteration = 1:max_iter,
+                            Island_1 = GAISL_output@summary[[1]][,"max"],
+                            Island_2 = GAISL_output@summary[[2]][,"max"],
+                            Island_3 = GAISL_output@summary[[3]][,"max"],
+                            Island_4 = GAISL_output@summary[[4]][,"max"])
+
+# Plot trace data for each island
+GAISL_summary %>% 
+  gather(key = "Island", value = "Average", -Iteration) %>% 
+  ggplot(mapping = aes(x = Iteration, y = Average, col = Island)) +
+    geom_line(size = 0.75, alpha = 0.8) +
+    theme_bw() + 
+    theme(aspect.ratio = 0.5) +
+    scale_color_brewer(type = "qual", palette = "Set1") +
+    labs(x = "Iteration", y = "Compressive Strength (Predicted)", title = "Best predicted compressive strength at each iteration", subtitle = "Results using Islands Genetic Algorithm (GAISL)")
+
+# Save best solution
+avNNet_GAISL <- data.frame(Method = "Islands Genetic Algorithm",
+                        Strength = GAISL_output@fitnessValue,
+                        Cement = GAISL_output@solution[1], 
+                        Slag = GAISL_output@solution[2], 
+                        Ash = GAISL_output@solution[3], 
+                        Superplasticizer = GAISL_output@solution[4], 
+                        Coarse_Aggregate = GAISL_output@solution[5], 
+                        Fine_Aggregate = GAISL_output@solution[6]) %>% 
+  mutate(Water = 1 - (Cement + Slag + Ash + Superplasticizer + Coarse_Aggregate + Fine_Aggregate), 
+         Age = days_aging)
+
+
+# Tabulate best solution(s)
+avNNet_GAISL %>% 
+  arrange(desc(Strength)) %>% 
+  knitr::kable(caption = "Summary of the best solution", align = "c", digits = 4, col.names = gsub("_", " ", colnames(avNNet_GAISL))) %>%
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F, position = "center") 
+```
+
+The islands genetic algorithm obtained a concrete mixture with a maximal predicted compressive strength of `r avNNet_GAISL %>% arrange(desc(Strength)) %>% .[1,2] %>% round(3)` MPa.
+
+***
+
+## Differential Evolution 
+
+[Differential Evolution](https://en.wikipedia.org/wiki/Differential_evolution) (DE) is a population-based search method for multidimensional real-valued functions. Similar to genetic algorithms, DE uses a population of solutions and creates new candidates solutions from parent solutions. 
+
+The main difference between genetic algorithms and differential evolution is regarding how new candidate solutions are created. In the latter method, new solutions are created by differential mutation of the population members. Three candidate solutions (e.g. `a`, `b` and `c`) are randomly selected and a mutant parameter vector is created using a simple arithmetic formula, `y = a + F(b-c)`, where `F` is a positive scaling factor that typically ranges from 0 to 1. This process is repeated for each dimension. The final mutant vector is then used for recombination.
+
+![Search for the global minimum of the 2D Ackley function with Differential Evolution. Source: Wikipedia](https://upload.wikimedia.org/wikipedia/commons/e/e0/Ackley.gif)
+
+The [`DEoptim`](https://cran.r-project.org/web/packages/DEoptim/DEoptim.pdf) package will be used for searching optimal concrete mixtures with differential evolution (DE). The package provides the `DEoptim()` function whose main arguments are:  
+
+- `fn`: function to assess the fitness of the solutions
+- `lower` and `upper`: lower and upper limits for each parameter
+- `control`: list of control parameters for search method (population size, propability of crossover, maximum number of iterations, etc.)
+
+```{r message=FALSE, warning=FALSE, prompt=FALSE, error=FALSE}
+# Set parameter settings for search algorithm
+max_iter <- 500 # maximum number of iterations
+pop_size <- 100 # population size
+```
+
+Prior to run the search method, a custom objective function is created. 
+
+```{r}
+# Create custom function for assessing solutions
+eval_function <- function(x, model, min_water, max_water, age = 28) {
+
+  x1 <- x[1]; x2 <- x[2]; x3 <- x[3]; x4 <- x[4]; x5 <- x[5]; x6 <- x[6]
+  
+  # Create dataframe with proportion of each solid component
+  solution_df <- data.frame(Cement = x1, 
+                            Slag = x2, 
+                            Ash = x3, 
+                            Superplasticizer = x4, 
+                            Coarse_Aggregate = x5, 
+                            Fine_Aggregate = x6)
+  
+  # Calculate proportion of water
+  solution_df$Water <- 1-rowSums(solution_df) # Water = 1-sum(solids)
+  
+  # Create death-penalty score for solutions with water content outside acceptable range
+  if(solution_df$Water >= min_water & solution_df$Water <= max_water & rowSums(solution_df) == 1) {
+
+    # Add pre-defined age to temporary solution
+    solution_df$Age <- age
+    
+    return(-predict(model, solution_df))
+    
+  } else {
+    
+    return(0)
+  }
+
+}
+```
+
+
+```{r message=FALSE, warning=FALSE, prompt=FALSE, error=FALSE}
+set.seed(1)
+n_cores <- detectCores()-1
+
+DE_T0 <- Sys.time() # record start time
+
+# Run differential evolution algorithm
+DE_output <- DEoptim::DEoptim(
+  fn = eval_function,
+  lower = lower_limits,
+  upper = upper_limits,
+  control = DEoptim.control(
+                            NP = pop_size, # population size
+                            itermax = max_iter, # maximum number of iterations
+                            CR = 0.5, # probability of crossover
+                            F = 0.8, # differential weighting factor
+                            storepopfreq = 1 , # store every population
+                            parallelType = 1, # run parallel processing
+                            trace = F
+                            ),
+  model = avNNet_model_final,
+  min_water = minimum_water,
+  max_water = maximum_water
+  )
+
+DE_T1 <- Sys.time() # record end time
+(DE_Time <- DE_T1-DE_T0)
+
+# Print search results
+summary(DE_output)
+DE_solution <- DE_output$optim$bestmem
+
+# Save parameters of best solution
+avNNet_DE <- data.frame(Method = "Differential Evolution",
+                        Strength = abs(DE_output$optim$bestval),
+                        Cement = DE_solution[1], 
+                        Slag = DE_solution[2], 
+                        Ash = DE_solution[3], 
+                        Superplasticizer = DE_solution[4], 
+                        Coarse_Aggregate = DE_solution[5], 
+                        Fine_Aggregate = DE_solution[6]) %>% 
+  mutate(Water = 1 - (Cement + Slag + Ash + Superplasticizer + Coarse_Aggregate + Fine_Aggregate), 
+         Age = days_aging)
+
+# Plot results
+ggplot(mapping = aes(x = 1:length(DE_output$member$bestvalit), y = abs(DE_output$member$bestvalit))) +
+    geom_line(col = "#08519c", size = 1) + 
+    theme_bw() +
+    theme(aspect.ratio = 0.7) +
+    labs(x = "Iteration", y = "Compressive Strength (Predicted)", title = "Best predicted compressive strength at each iteration", subtitle = "Results using Differential Evolution")
+
+# Tabulate best solution(s)
+avNNet_DE %>% 
+  arrange(desc(Strength)) %>% 
+  knitr::kable(caption = "Summary of the best solution", align = "c", digits = 4, col.names = gsub("_", " ", colnames(avNNet_DE))) %>%
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F, position = "center") 
+```
+
+The search was completed and found the best value to be `r abs(DE_output$optim$bestval) %>% round(3)` after `r DE_output$optim$iter` iterations and `r DE_output$optim$nfeval` function evaluations.
+
+***
+
+## Particle Swarm Optimization
+
+[Particle swarm optimization](https://en.wikipedia.org/wiki/Particle_swarm_optimization) (PSO) is a population-based search method that belongs to the swarm intelligence family of algorithms. Proposed by [Kenned and Eberhart (1995)](https://ieeexplore.ieee.org/document/488968),  this method is inspired by the swarm behavior of several animals such as bird flocks, fish schools and bee swarms.
+
+The PSO method searches for the optimal solution by using a population of candidate solutions (also known as particles) that iteratively move across the search space. The movement of a specific particle across the search space is determined by its local best known position but also by the best known position in the search space found by other particles. This results in the whole swarm moving in a self-organized behaviour.
+
+Each particle is defined by its:  
+
+- position
+- fitness value
+- velocity
+- previous best position
+- previous best position in the neighbourhood
+
+The position of a particle on the next iteration depends on its current position and velocity, while the velocity depends on all of the parameters that define the particle.
+
+![A swarm of particles searching for the global minimum. Source: Wikipedia](https://upload.wikimedia.org/wikipedia/commons/e/ec/ParticleSwarmArrowsAnimation.gif)
+
+The [`PSO`](https://cran.r-project.org/web/packages/pso/index.html) package will be used to optimize the concrete mixture using particle swarm optimization through the `psoptim()` function. Prior to run the search method, a custom objective function is created. 
+
+```{r message=FALSE, warning=FALSE, prompt=FALSE, error=FALSE}
+# Set parameter settings for search algorithm
+max_iter <- 500 # maximum number of iterations
+pop_size <- 100 # population size
+```
+
+
+```{r}
+# Create custom function for assessing solutions
+eval_function <- function(x, model, min_water, max_water, age = 28) {
+
+  x1 <- x[1]; x2 <- x[2]; x3 <- x[3]; x4 <- x[4]; x5 <- x[5]; x6 <- x[6]
+  
+  # Create dataframe with proportion of each solid component
+  solution_df <- data.frame(Cement = x1, 
+                            Slag = x2, 
+                            Ash = x3, 
+                            Superplasticizer = x4, 
+                            Coarse_Aggregate = x5, 
+                            Fine_Aggregate = x6)
+  
+  # Calculate proportion of water
+  solution_df$Water <- 1-rowSums(solution_df) # Water = 1-sum(solids)
+  
+  # Create death-penalty score for solutions with water content outside acceptable range
+  if(solution_df$Water >= min_water & solution_df$Water <= max_water & rowSums(solution_df) == 1) {
+
+    # Add pre-defined age to temporary solution
+    solution_df$Age <- age
+    
+    return(-predict(model, solution_df))
+    
+  } else {
+    
+    return(0)
+  }
+
+}
+```
+
+The `psoptim()` function from the `pso` package is used to run the search algorithm. The [SPSO2011](https://ieeexplore.ieee.org/document/7166327) method will be used for this search.
+
+```{r message=FALSE, warning=FALSE, prompt=FALSE, error=FALSE}
+set.seed(1)
+n_cores <- detectCores()-1
+
+PSO_T0 <- Sys.time() # record start time
+
+# Run differential evolution algorithm
+PSO_output <- pso::psoptim(
+  par = rep(NA, 6),
+  fn = eval_function,
+  lower = lower_limits,
+  upper = upper_limits,
+  control = list(
+                trace = 1, #  produce tracing information on the progress of the optimization
+                maxit = max_iter, # maximum number of iterations
+                REPORT = 1, #  frequency for reports
+                trace.stats = T,
+                s = pop_size, # Swarm Size,
+                maxit.stagnate = round(0.75*max_iter), # maximum number of iterations without improvement
+                vectorize = T,
+                type = "SPSO2011" # method used
+                ),
+  model = avNNet_model_final,
+  min_water = minimum_water,
+  max_water = maximum_water
+  )
+
+PSO_T1 <- Sys.time() # record end time
+(PSO_Time <- PSO_T1-PSO_T0)
+
+PSO_solution <- PSO_output$par
+
+avNNet_PSO <- data.frame(Method = "Particle Swarm Optimization",
+                        Strength = abs(PSO_output$value),
+                        Cement = PSO_solution[1],
+                        Slag = PSO_solution[2],
+                        Ash = PSO_solution[3],
+                        Superplasticizer = PSO_solution[4],
+                        Coarse_Aggregate = PSO_solution[5],
+                        Fine_Aggregate = PSO_solution[6]) %>%
+  mutate(Water = 1 - (Cement + Slag + Ash + Superplasticizer + Coarse_Aggregate + Fine_Aggregate),
+         Age = days_aging)
+
+# Plot results
+PSO_summary <- data.frame(
+                          Iteration = PSO_output$stats$it,
+                          Mean = PSO_output$stats$f %>% sapply(FUN = mean) %>% abs(),
+                          Median = PSO_output$stats$f %>% sapply(FUN = median) %>% abs(),
+                          Best = PSO_output$stats$error %>% sapply(FUN = min) %>% abs()
+                          )
+
+PSO_summary %>% 
+  gather(key = "Parameter", value = "Value", -Iteration) %>% 
+  ggplot(mapping = aes(x = Iteration, y = abs(Value), col = Parameter)) +
+    geom_line(size = 0.7) +
+    theme_bw() +
+    theme(aspect.ratio = 0.9) +
+    labs(x = "Iteration", y = "Compressive Strength (Predicted)", title = "Best predicted compressive strength at each iteration", subtitle = "Results using Particle Swarm Optimization") +
+    scale_color_brewer(type = "qual", palette = "Set1")
+
+# Tabulate best solution(s)
+avNNet_PSO %>% 
+  arrange(desc(Strength)) %>% 
+  knitr::kable(caption = "Summary of the best solution", align = "c", digits = 4, col.names = gsub("_", " ", colnames(avNNet_PSO))) %>%
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F, position = "center")
+```
+
+The search was completed a found the best predicted compressive strength to be `r abs(PSO_output$value) %>% round(3)` after `r PSO_output$counts[2][[1]]` iterations and `r PSO_output$counts[1][[1]]` function evaluations.
+
+***
+
+# Analysing Solutions
+
+The table below summarises the values of predicted compressive strength for each method used and their respective concrete mixtures.
+
+```{r}
+predictor_ID <- c("Cement", "Slag", "Ash", "Superplasticizer", "Coarse_Aggregate", "Fine_Aggregate", "Water")
+
+summary_table <- bind_rows(avNNet_GS, avNNet_RS, avNNet_SA, avNNet_GA, avNNet_GAISL, avNNet_DE, avNNet_PSO) 
+
+summary_table %>% 
+  arrange(desc(Strength)) %>% 
+  knitr::kable(caption = "Summary of the best solutions.", align = "c", digits = 3, col.names = gsub("_", " ", colnames(summary_table))) %>%
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F, position = "center") 
+```
+
+The PCA plot below shows how the best solutions of each model differ and cluster.
+
+```{r message=FALSE, warning=FALSE, prompt=FALSE, fig.align='center'}
+PCA <- prcomp(summary_table[, predictor_ID], center = TRUE, scale = TRUE) # Age needs to be removed from the PCA matrix (zero-variance)
+
+autoplot(PCA, 
+         data = summary_table, 
+         size = "Strength",
+         colour = "Method", alpha = 0.7, 
+         loadings = TRUE, loadings.label = TRUE, loadings.colour = "grey10", loadings.label.colour = "grey10", loadings.label.size = 3, 
+         Loadings.label.label = c("Cement", "Slag", "Ash", "Superplasticizer", "Coarse Aggregate", "Fine Aggregate", "Water")) +
+  scale_color_brewer(type = "qual", palette = "Set1") +
+  labs(title = "PCA plot of best concrete mixtures for each search method", subtitle = "Strength values at 28 days.", size = "Predicted Strength\n(MPa)", caption = NULL)  +
+  theme_bw() +
+  theme(aspect.ratio = 0.9, legend.text = element_text(size = 8.5), legend.title = element_text(face = "bold", size = 9), axis.title = element_text(size = 9))
+
+```
+
+The PCA plot above shows that there are some differences between solutions provided by each search method. Solutions with higher strength leverage the use of cement for obtaining higher predicted compressive strengths.
+
+The solution obtained with differential evolution had the highest predicted strength and based on the PCA plot above it composition is similar to the composition of solutions obtained grid and random search.
+
+***
+
+# References
+
+- Cortez, P. (2014) *Modern Optimization with R*, DOI 10.1007/978-3-319-08263-9
+- Scrucca, L. (2013) [*GA: A Package for Genetic Algorithms in R*](https://www.jstatsoft.org/v53/i04/). Journal of Statistical Software, 53/4, 1-37. doi:http://dx.doi.org/10.18637/jss.v053.i04
+- Storn, R.; Price, K. (1997). [*Differential evolution - a simple and efficient heuristic for global optimization over continuous spaces*](https://link.springer.com/article/10.1023%2FA%3A1008202821328). Journal of Global Optimization. 11 (4): 341–359. doi:10.1023/A:1008202821328
+-  Mullen, K., Ardia, D., Gil, D., Windover, D., & Cline, J. (2011). [*DEoptim: An R Package for Global Optimization by Differential Evolution*](https://www.jstatsoft.org/article/view/v040i06). Journal of Statistical Software, 40(6), 1 - 26. doi:http://dx.doi.org/10.18637/jss.v040.i06
+- Kennedy, J., Eberhart, R. (1995). [*Particle Swarm Optimization*](https://ieeexplore.ieee.org/document/488968). Proceedings of IEEE International Conference on Neural Networks. IV. pp. 1942–1948. doi:10.1109/ICNN.1995.488968
+- M. R. Bonyadi and Z. Michalewicz, [*Analysis of Stability, Local Convergence, and Transformation Sensitivity of a Variant of the Particle Swarm Optimization Algorithm*](https://ieeexplore.ieee.org/document/7166327), in IEEE Transactions on Evolutionary Computation, vol. 20, no. 3, pp. 370-385, June 2016. doi: 10.1109/TEVC.2015.2460753
+
+
+***
+
+# Additional Information
+
+```{r}
+sessionInfo()
+```
+
+
+
+
