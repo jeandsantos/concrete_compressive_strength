@@ -1,4 +1,4 @@
-# Exploring the Use of Modern Search Methods in R for Hyperparameter Tuning of Machine Learning Models and Maximizing the Compressive Strength of Concrete
+# Exploring the Use of Modern Search Methods in R for Hyperparameter Tuning of a XGBoost model and Maximizing the Compressive Strength of Concrete
 
 This project has two main objectives:  
 
