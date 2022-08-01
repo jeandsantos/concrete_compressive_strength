@@ -69,8 +69,35 @@ The `pacman` package is used to install and load all necessary packages.
 
 ```{r message=FALSE, warning=FALSE, prompt=FALSE, error=FALSE}
 # Install and load packages
-if (!require(pacman)) {install.packages("pacman", verbose = F, quiet = T)} else require(pacman, quietly = T)
-suppressWarnings(pacman::p_load(plyr, caret, tidyverse, tidyselect, readr, readxl, parallel, doParallel, gridExtra, pso, GA, GenSA, DEoptim, GGally, ggfortify, broom, knitr, kableExtra, install = T))
+if (!require(pacman)) {install.packages("pacman", verbose = FALSE, quiet = TRUE)} else require(pacman, quietly = TRUE)
+suppressWarnings(pacman::p_load(
+  plyr,
+  caret,
+  dplyr,
+  tidyr,
+  readr,
+  purrr,
+  ggplot2,
+  tibble,
+  stringr,
+  magrittr,
+  tidyselect,
+  readr,
+  readxl,
+  parallel,
+  doParallel,
+  gridExtra,
+  pso,
+  GA,
+  GenSA,
+  DEoptim,
+  GGally,
+  ggfortify,
+  broom,
+  knitr,
+  kableExtra,
+  install = TRUE
+))
 ```
 
 ***
@@ -84,7 +111,7 @@ The dataset is downloaded from the data the [UCI Machine Learning Data Repositor
 # download.file(url = "http://archive.ics.uci.edu/ml/machine-learning-databases/concrete/compressive/Concrete_Data.xls", destfile = "Concrete_Data.xls", method = "curl", quiet = TRUE)
 
 # Import Data
-concrete_data <- read_xls(path = "Concrete_Data.xls", sheet = 1)
+concrete_data <- read_xls(path = "data/Concrete_Data.xls", sheet = 1)
 ```
 
 ***
@@ -121,16 +148,16 @@ concrete_data %>%
   gather(key = "Feature", value = "Quantity") %>% 
   dplyr::group_by(Feature) %>% 
   summarise(
-    `NA` = sum(is.array(Quantity), na.rm = T),
-    Min = min(Quantity, na.rm = T),
-    `1st Quartile` = quantile(Quantity, probs = 0.25, na.rm = T),
-    Median = median(Quantity, na.rm = T),
-    Mean = mean(Quantity, na.rm = T),
+    `NA` = sum(is.array(Quantity), na.rm = TRUE),
+    Min = min(Quantity, na.rm = TRUE),
+    `1st Quartile` = quantile(Quantity, probs = 0.25, na.rm = TRUE),
+    Median = median(Quantity, na.rm = TRUE),
+    Mean = mean(Quantity, na.rm = TRUE),
     `3rd Quartile` = quantile(Quantity, probs = 0.75),
-    Max = max(Quantity, na.rm = T)
+    Max = max(Quantity, na.rm = TRUE)
   ) %>% 
   kable(digits = 4, align = "c") %>% 
-  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F, position = "center")
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = FALSE, position = "center")
 ```
 
 There are no NA values in the dataset however input variables have different ranges of values.
@@ -158,25 +185,47 @@ Since the compressive strength generally increases with ageing and we are not in
 
 ```{r message=FALSE, warning=FALSE, prompt=FALSE, fig.align='center'}
 # Import predictive model
-avNNet_model_final<- readRDS(file = "Models/avNNet_model.rds")
+avNNet_model_final<- readRDS(file = "models/avNNet_model.rds")
 
 # Define minimum and maximum values for each input
 margin <- 0.05 
 Cement_min_max <- c(min(concrete_data$Cement)*(1-margin), 
                     max(concrete_data$Cement)*(1+margin)) %>% round(4)
+
 Slag_min_max <- c(min(concrete_data$Slag)*(1-margin), 
                   max(concrete_data$Slag)*(1+margin)) %>% round(4)
+
 Ash_min_max <- c(min(concrete_data$Ash)*(1-margin), 
                  max(concrete_data$Ash)*(1+margin)) %>% round(4)
+
 Superplasticizer_min_max <- c(min(concrete_data$Superplasticizer)*(1-margin),
                               max(concrete_data$Superplasticizer)*(1+margin)) %>% round(4)
+
 Coarse_Aggregate_min_max <- c(min(concrete_data$Coarse_Aggregate)*(1-margin),
                               max(concrete_data$Coarse_Aggregate)*(1+margin)) %>% round(4)
+
 Fine_Aggregate_min_max <- c(min(concrete_data$Fine_Aggregate)*(1-margin),
                             max(concrete_data$Fine_Aggregate)*(1+margin)) %>% round(4)
 
-lower_limits <- c(Cement_min_max[1], Slag_min_max[1], Ash_min_max[1], Superplasticizer_min_max[1], Coarse_Aggregate_min_max[1], Fine_Aggregate_min_max[1])
-upper_limits <- c(Cement_min_max[2], Slag_min_max[2], Ash_min_max[2], Superplasticizer_min_max[2], Coarse_Aggregate_min_max[2], Fine_Aggregate_min_max[2])
+lower_limits <-
+  c(
+    Cement_min_max[1],
+    Slag_min_max[1],
+    Ash_min_max[1],
+    Superplasticizer_min_max[1],
+    Coarse_Aggregate_min_max[1],
+    Fine_Aggregate_min_max[1]
+  )
+
+upper_limits <-
+  c(
+    Cement_min_max[2],
+    Slag_min_max[2],
+    Ash_min_max[2],
+    Superplasticizer_min_max[2],
+    Coarse_Aggregate_min_max[2],
+    Fine_Aggregate_min_max[2]
+  )
 
 # Set fixed value for aging
 days_aging <- 28
@@ -230,15 +279,15 @@ Search_Grid %>%
   gather(key = "Feature", value = "Quantity") %>% 
   dplyr::group_by(Feature) %>% 
   summarise(
-    Min = min(Quantity, na.rm = T),
-    `1st Quartile` = quantile(Quantity, probs = 0.25, na.rm = T),
-    Median = median(Quantity, na.rm = T),
-    Mean = mean(Quantity, na.rm = T),
+    Min = min(Quantity, na.rm = TRUE),
+    `1st Quartile` = quantile(Quantity, probs = 0.25, na.rm = TRUE),
+    Median = median(Quantity, na.rm = TRUE),
+    Mean = mean(Quantity, na.rm = TRUE),
     `3rd Quartile` = quantile(Quantity, probs = 0.75),
-    Max = max(Quantity, na.rm = T)
+    Max = max(Quantity, na.rm = TRUE)
   ) %>% 
   kable(digits = 4, align = "c") %>% 
-  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F, position = "center")
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = FALSE, position = "center")
 ```
 
 The search grid has a `r round(nrow(Search_Grid)/1000000,2)` million different solutions.
@@ -266,11 +315,11 @@ avNNet_GS <- Search_Grid %>%
 avNNet_GS %>% 
   arrange(desc(Strength)) %>% 
   knitr::kable(caption = "Summary of the best solutions", align = "c", digits = 4, col.names = gsub("_", " ", colnames(avNNet_GS))) %>%
-  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F, position = "center") 
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = FALSE, position = "center") 
 ```
 
 ```{r message=FALSE, warning=FALSE, echo=FALSE, include=FALSE, message=FALSE, eval=TRUE}
-rm(Search_Grid); gc(full = T, verbose = F)
+rm(Search_Grid); gc(full = TRUE, verbose = FALSE)
 ```
 
 The grid search obtained a concrete mixture with a maximal predicted compressive strength of `r avNNet_GS %>% arrange(desc(Strength)) %>% .[1,2] %>% round(3)` MPa.
@@ -288,12 +337,12 @@ Create random solutions of a wide range of ingredient combinations to perform a 
 ```{r message=FALSE, warning=FALSE, prompt=FALSE, fig.align='center'}
 set.seed(1)
 Random_Solutions <- expand.grid(
-  Cement = runif(18, Cement_min_max[1], Cement_min_max[2]),
-  Slag = runif(18, Slag_min_max[1], Slag_min_max[2]),
-  Ash = runif(18, Ash_min_max[1], Ash_min_max[2]),
+  Cement           = runif(18, Cement_min_max[1], Cement_min_max[2]),
+  Slag             = runif(18, Slag_min_max[1], Slag_min_max[2]),
+  Ash              = runif(18, Ash_min_max[1], Ash_min_max[2]),
   Superplasticizer = runif(18, Superplasticizer_min_max[1], Superplasticizer_min_max[2]),
   Coarse_Aggregate = runif(18, Coarse_Aggregate_min_max[1], Coarse_Aggregate_min_max[2]),
-  Fine_Aggregate = runif(18, Fine_Aggregate_min_max[1], Fine_Aggregate_min_max[2])
+  Fine_Aggregate   = runif(18, Fine_Aggregate_min_max[1], Fine_Aggregate_min_max[2])
   )
 
 # Set threshold for minimum and maximum solids: remove solutions with too little or too much water
@@ -314,15 +363,15 @@ Random_Solutions %>%
   gather(key = "Feature", value = "Quantity") %>% 
   dplyr::group_by(Feature) %>% 
   summarise(
-    Min = min(Quantity, na.rm = T),
-    `1st Quartile` = quantile(Quantity, probs = 0.25, na.rm = T),
-    Median = median(Quantity, na.rm = T),
-    Mean = mean(Quantity, na.rm = T),
+    Min = min(Quantity, na.rm = TRUE),
+    `1st Quartile` = quantile(Quantity, probs = 0.25, na.rm = TRUE),
+    Median = median(Quantity, na.rm = TRUE),
+    Mean = mean(Quantity, na.rm = TRUE),
     `3rd Quartile` = quantile(Quantity, probs = 0.75),
-    Max = max(Quantity, na.rm = T)
+    Max = max(Quantity, na.rm = TRUE)
   ) %>% 
   kable(digits = 4, align = "c") %>% 
-  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F, position = "center")
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = FALSE, position = "center")
 ```
 
 There are `r round(nrow(Random_Solutions)/1000000,2)` million different random solutions.
@@ -351,12 +400,12 @@ avNNet_RS <- Random_Solutions %>%
 avNNet_RS %>% 
   arrange(desc(Strength)) %>% 
   knitr::kable(caption = "Summary of the best solutions", align = "c", digits = 4, col.names = gsub("_", " ", colnames(avNNet_RS))) %>%
-  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F, position = "center") 
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = FALSE, position = "center") 
 ```
 
 
 ```{r message=FALSE, warning=FALSE, echo=FALSE, include=FALSE, message=FALSE, eval=TRUE}
-rm(Random_Solutions); gc(full = T, verbose = F)
+rm(Random_Solutions); gc(full = TRUE, verbose = FALSE)
 ```
 
 The random search obtained a concrete mixture with a maximal predicted compressive strength of `r avNNet_RS %>% arrange(desc(Strength)) %>% .[1,2] %>% round(3)` MPa.
@@ -407,15 +456,13 @@ In order to assess each solution, a custom function to predict the compressive s
 # Create custom function for assessing solutions
 eval_function <- function(x, model, min_water, max_water, age = 28) {
 
-  x1 <- x[1]; x2 <- x[2]; x3 <- x[3]; x4 <- x[4]; x5 <- x[5]; x6 <- x[6]
-  
   # Create dataframe with proportion of each solid component
-  solution_df <- data.frame(Cement = x1, 
-                            Slag = x2, 
-                            Ash = x3, 
-                            Superplasticizer = x4, 
-                            Coarse_Aggregate = x5, 
-                            Fine_Aggregate = x6)
+  solution_df <- data.frame(Cement = x[1], 
+                            Slag = x[2], 
+                            Ash = x[3], 
+                            Superplasticizer = x[4], 
+                            Coarse_Aggregate = x[5], 
+                            Fine_Aggregate = x[6])
   
   # Calculate proportion of water
   solution_df$Water <- 1-rowSums(solution_df) # Water = 1-sum(solids)
@@ -456,7 +503,7 @@ for(i in 1:nrow(SA_output)) {
                           upper = upper_limits,
                           control = list(
                             maxit = max_iter/pop_size, 
-                            verbose = F),
+                            verbose = FALSE),
                           model = avNNet_model_final,
                           min_water = minimum_water,
                           max_water = maximum_water
@@ -467,7 +514,7 @@ for(i in 1:nrow(SA_output)) {
   # Save the input variables
   SA_output[i, 1:6] <- results$par
 
-  if (SA_output$Strength[i] == max(SA_output$Strength, na.rm = T)) {
+  if (SA_output$Strength[i] == max(SA_output$Strength, na.rm = TRUE)) {
     i_max <- i
     trace_SA_max <- results$trace.mat
   }
@@ -488,7 +535,7 @@ avNNet_SA <- SA_output %>%
 avNNet_SA %>% 
   arrange(desc(Strength)) %>% 
   knitr::kable(caption = "Summary of the best solutions", align = "c", digits = 4, col.names = gsub("_", " ", colnames(avNNet_SA))) %>%
-  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F, position = "center")
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = FALSE, position = "center")
 ```
 
 Simulated annealing obtained a concrete mixture with a maximal predicted compressive strength of `r avNNet_SA %>% arrange(desc(Strength)) %>% .[1,2] %>% .[[1]] %>% round(3)` MPa. 
@@ -533,16 +580,14 @@ pop_size <- 100 # population size
 ```{r message=FALSE, warning=FALSE, prompt=FALSE, fig.align='center'}
 # Create custom function for assessing solutions
 eval_function <- function(x, model) {
-  
-  x1 <- x[1]; x2 <- x[2]; x3 <- x[3]; x4 <- x[4]; x5 <- x[5]; x6 <- x[6]
 
   # Create dataframe with proportion of each solid component
-  solution_df <- data.frame(Cement = x1, 
-                            Slag = x2, 
-                            Ash = x3, 
-                            Superplasticizer = x4, 
-                            Coarse_Aggregate = x5, 
-                            Fine_Aggregate = x6)
+  solution_df <- data.frame(Cement = x[1], 
+                            Slag = x[2], 
+                            Ash = x[3], 
+                            Superplasticizer = x[4], 
+                            Coarse_Aggregate = x[5], 
+                            Fine_Aggregate = x[6])
   
   # Calculate proportion of water
   solution_df$Water <- 1-rowSums(solution_df) # Water = 1-sum(solids)
@@ -630,7 +675,7 @@ avNNet_GA <- data.frame(Method = "Genetic Algorithm",
 avNNet_GA %>% 
   arrange(desc(Strength)) %>% 
   knitr::kable(caption = "Summary of the best solutions", align = "c", digits = 4, col.names = gsub("_", " ", colnames(avNNet_GA))) %>%
-  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F, position = "center") 
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = FALSE, position = "center") 
 ```
 
 The genetic algorithm obtained a concrete mixture with a maximal predicted compressive strength of `r avNNet_GA %>% arrange(desc(Strength)) %>% .[1,2] %>% round(3)` MPa.
@@ -674,10 +719,10 @@ GAISL_output <- GA::gaisl(
   numIslands = 4, 
   migrationRate = 0.1, 
   migrationInterval = 10,
-  monitor = F,
+  monitor = FALSE,
   # suggestions = starting_point, # Optional: starting point for genetic algorithm
   parallel = n_cores,
-  optim = T, # perform local search
+  optim = TRUE, # perform local search
   optimArgs = list(method = "L-BFGS-B",
                     poptim = 0.20,
                     pressel = 0.5,
@@ -723,7 +768,7 @@ avNNet_GAISL <- data.frame(Method = "Islands Genetic Algorithm",
 avNNet_GAISL %>% 
   arrange(desc(Strength)) %>% 
   knitr::kable(caption = "Summary of the best solution", align = "c", digits = 4, col.names = gsub("_", " ", colnames(avNNet_GAISL))) %>%
-  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F, position = "center") 
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = FALSE, position = "center") 
 ```
 
 The islands genetic algorithm obtained a concrete mixture with a maximal predicted compressive strength of `r avNNet_GAISL %>% arrange(desc(Strength)) %>% .[1,2] %>% round(3)` MPa.
@@ -804,7 +849,7 @@ DE_output <- DEoptim::DEoptim(
                             F = 0.8, # differential weighting factor
                             storepopfreq = 1 , # store every population
                             parallelType = 1, # run parallel processing
-                            trace = F
+                            trace = FALSE
                             ),
   model = avNNet_model_final,
   min_water = minimum_water,
@@ -841,7 +886,7 @@ ggplot(mapping = aes(x = 1:length(DE_output$member$bestvalit), y = abs(DE_output
 avNNet_DE %>% 
   arrange(desc(Strength)) %>% 
   knitr::kable(caption = "Summary of the best solution", align = "c", digits = 4, col.names = gsub("_", " ", colnames(avNNet_DE))) %>%
-  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F, position = "center") 
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = FALSE, position = "center") 
 ```
 
 The search was completed and found the best value to be `r abs(DE_output$optim$bestval) %>% round(3)` after `r DE_output$optim$iter` iterations and `r DE_output$optim$nfeval` function evaluations.
@@ -926,10 +971,10 @@ PSO_output <- pso::psoptim(
                 trace = 1, #  produce tracing information on the progress of the optimization
                 maxit = max_iter, # maximum number of iterations
                 REPORT = 1, #  frequency for reports
-                trace.stats = T,
+                trace.stats = TRUE,
                 s = pop_size, # Swarm Size,
                 maxit.stagnate = round(0.75*max_iter), # maximum number of iterations without improvement
-                vectorize = T,
+                vectorize = TRUE,
                 type = "SPSO2011" # method used
                 ),
   model = avNNet_model_final,
@@ -974,7 +1019,7 @@ PSO_summary %>%
 avNNet_PSO %>% 
   arrange(desc(Strength)) %>% 
   knitr::kable(caption = "Summary of the best solution", align = "c", digits = 4, col.names = gsub("_", " ", colnames(avNNet_PSO))) %>%
-  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F, position = "center")
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = FALSE, position = "center")
 ```
 
 The search was completed a found the best predicted compressive strength to be `r abs(PSO_output$value) %>% round(3)` after `r PSO_output$counts[2][[1]]` iterations and `r PSO_output$counts[1][[1]]` function evaluations.
@@ -993,7 +1038,7 @@ summary_table <- bind_rows(avNNet_GS, avNNet_RS, avNNet_SA, avNNet_GA, avNNet_GA
 summary_table %>% 
   arrange(desc(Strength)) %>% 
   knitr::kable(caption = "Summary of the best solutions.", align = "c", digits = 3, col.names = gsub("_", " ", colnames(summary_table))) %>%
-  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F, position = "center") 
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = FALSE, position = "center") 
 ```
 
 The PCA plot below shows how the best solutions of each model differ and cluster.

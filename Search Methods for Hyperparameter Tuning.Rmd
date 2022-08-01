@@ -46,8 +46,29 @@ The dataset contains 1030 examples and the following features:
 The `pacman` package is used to install and load all necessary packages.
 
 ```{r message=FALSE, warning=FALSE, message=FALSE, prompt=FALSE}
-# install.packages("pacman", verbose = F, quiet = T)
-pacman::p_load(caret, tidyverse, readr, readxl, parallel, doParallel, gridExtra, plyr, pso, GA, DEoptim, GGally, xgboost, broom, knitr, kableExtra, tictoc, install = T)
+install.packages("pacman", verboseFALSE, quiet= TRUE)
+pacman::p_load(
+  caret,
+  tidyverse,
+  readr,
+  readxl,
+  parallel,
+  doParallel,
+  gridExtra,
+  plyr,
+  pso,
+  GA,
+  DEoptim,
+  GGally,
+  xgboost,
+  broom,
+  knitr,
+  kableExtra,
+  tictoc,
+  install = TRUE
+)
+
+source("utils/custom_plots.R")
 ```
 
 # Importing the Data
@@ -59,7 +80,7 @@ The data was downloaded from the [UCI Machine Learning Data Repository](https://
 # download.file(url = "http://archive.ics.uci.edu/ml/machine-learning-databases/concrete/compressive/Concrete_Data.xls", destfile = "Concrete_Data.xls", method = "curl", quiet = TRUE)
 
 # Import Data
-concrete_data <- read_xls(path = "Concrete_Data.xls", sheet = 1)
+concrete_data <- read_xls(path = "data/Concrete_Data.xls", sheet = 1)
 
 # Rename variables
 colnames(concrete_data) <- c("Cement", "Slag", "Ash", "Water", "Superplasticizer", "Coarse_Aggregate", "Fine_Aggregate", "Age", "Strength")
@@ -90,7 +111,7 @@ Print summary statistics for all variables and check for missing (NA) values:
 summary(concrete_data)
 
 # Check number of NA values in each column
-colSums(is.na(concrete_data), na.rm = F)
+colSums(is.na(concrete_data), na.rmFALSE)
 ```
 
 There are no NA values in the dataset however input variables have different ranges of values.
@@ -144,7 +165,14 @@ concrete_data <- concrete_data[complete.cases(concrete_data), ]
 
 # Average the values of compressive strength of replicate experiments
 concrete_data <- ddply(.data = concrete_data, 
-                       .variables = .(Cement, Slag, Ash, Water, Superplasticizer, `Coarse_Aggregate`, `Fine_Aggregate`, Age), 
+                       .variables = .(Cement,
+                                      Slag,
+                                      Ash,
+                                      Water,
+                                      Superplasticizer,
+                                      `Coarse_Aggregate`,
+                                      `Fine_Aggregate`,
+                                      Age),
                        .fun = function(x) c(Strength = mean(x$Strength)))
 
 # Create training and test set using stratified partioning
@@ -260,8 +288,8 @@ GS_T1-GS_T0
 
 GS_XGBoost_Linear_model
 
-saveRDS(object = GS_XGBoost_Linear_model, file = "Models/GS_XGBoost_Linear_model.rds")
-saveRDS(object = GS_XGBoost_Linear_model$finalModel, file = paste0("Models/GS_XGBoost_Linear_model_", class(GS_XGBoost_Linear_model$finalModel)[1],".rds"))
+saveRDS(object = GS_XGBoost_Linear_model, file = "models/GS_XGBoost_Linear_model.rds")
+saveRDS(object = GS_XGBoost_Linear_model$finalModel, file = paste0("models/GS_XGBoost_Linear_model_", class(GS_XGBoost_Linear_model$finalModel)[1],".rds"))
 ```
 
 The best model from the grid search has an average cross-validated RMSE of `r GS_XGBoost_Linear_model$results %>% arrange(RMSE) %>% .[1,] %>% select(RMSE) %>% .[[1]] %>% round(3)`. 
@@ -270,7 +298,7 @@ This model has `r GS_XGBoost_Linear_model$finalModel$tuneValue$nrounds` iteratio
 The effect of the hyperparameters values tested on the cross-validation statistics can be seen on the charts below.
 
 ```{r fig.height=11, fig.width=10, message=FALSE, warning=FALSE, prompt=FALSE, error=FALSE}
-# library(tidyverse, quietly = T, verbose = F)
+# library(tidyverse, quietly= TRUE, verbose = FALSE)
 
 RMSE_plot_XGBoost_Linear <- GS_XGBoost_Linear_model$results %>% 
   dplyr::select(nrounds, lambda, alpha, eta, RMSE) %>% 
@@ -387,8 +415,8 @@ RS_T1-RS_T0
 
 RS_XGBoost_Linear_model
 
-saveRDS(object = RS_XGBoost_Linear_model, file = "Models/RS_XGBoost_Linear_model.rds")
-saveRDS(object = RS_XGBoost_Linear_model$finalModel, file = paste0("Models/RS_XGBoost_Linear_model_", class(RS_XGBoost_Linear_model$finalModel)[1],".rds"))
+saveRDS(object = RS_XGBoost_Linear_model, file = "models/RS_XGBoost_Linear_model.rds")
+saveRDS(object = RS_XGBoost_Linear_model$finalModel, file = paste0("models/RS_XGBoost_Linear_model_", class(RS_XGBoost_Linear_model$finalModel)[1],".rds"))
 ```
 
 The best model from the grid search has an average cross-validated RMSE of `r RS_XGBoost_Linear_model$results %>% arrange(RMSE) %>% .[1,] %>% select(RMSE) %>% .[[1]] %>% round(3)`. 
@@ -457,8 +485,8 @@ GA_model_XGBoost_Linear <- GA::ga(type = "real-valued",
                                 elitism = 0.3, # percentage of elitism (fraction of best current solutions used on next round)
                                 # suggestions = starting_point,
                                 parallel = n_cores, 
-                                optim = F, 
-                                keepBest = T,
+                                optimFALSE, 
+                                keepBest= TRUE,
                                 seed = 1
                )
 GA_T1 <- Sys.time()
@@ -493,7 +521,7 @@ GA_XGBoost_Linear_model <- caret::train(Strength ~.,
                           data = training_set, 
                           method = "xgbLinear",
                           trControl = train_control,
-                          verbose = F, metric = "RMSE", maximize = FALSE,
+                          verboseFALSE, metric = "RMSE", maximize = FALSE,
                           silent = 1,
                           # tuneLength = 1
                           tuneGrid = GA_XGBoost_Linear_grid
@@ -506,8 +534,8 @@ T1-T0
 
 GA_XGBoost_Linear_model
 
-saveRDS(object = GA_XGBoost_Linear_model, file = paste0("Models/GA_XGBoost_Linear_model_", stringr::str_remove_all(Sys.time(), pattern = ":"),".rds"))
-saveRDS(object = GA_XGBoost_Linear_model$finalModel, file = paste0("Models/GA_XGBoost_Linear_model_", class(GA_XGBoost_Linear_model$finalModel)[1], "_", stringr::str_remove_all(Sys.time(), pattern = ":"),".rds"))
+saveRDS(object = GA_XGBoost_Linear_model, file = paste0("models/GA_XGBoost_Linear_model_", stringr::str_remove_all(Sys.time(), pattern = ":"),".rds"))
+saveRDS(object = GA_XGBoost_Linear_model$finalModel, file = paste0("models/GA_XGBoost_Linear_model_", class(GA_XGBoost_Linear_model$finalModel)[1], "_", stringr::str_remove_all(Sys.time(), pattern = ":"),".rds"))
 ```
 
 The best model from the search with the genetic algorithm has an average cross-validated RMSE of `r GA_XGBoost_Linear_model$results %>% arrange(RMSE) %>% .[1,] %>% select(RMSE) %>% .[[1]] %>% round(3)`. 
@@ -621,7 +649,7 @@ DE_XGBoost_Linear_model <- caret::train(Strength ~.,
                           data = training_set, 
                           method = "xgbLinear",
                           trControl = train_control,
-                          verbose = F, metric = "RMSE", maximize = FALSE,
+                          verboseFALSE, metric = "RMSE", maximize = FALSE,
                           silent = 1,
                           # tuneLength = 1
                           tuneGrid = DE_XGBoost_Linear_grid
@@ -634,8 +662,8 @@ T1-T0
 
 DE_XGBoost_Linear_model
 
-saveRDS(object = DE_XGBoost_Linear_model, file = paste0("Models/DE_XGBoost_Linear_model_PSO_", stringr::str_remove_all(Sys.time(), pattern = ":"),".rds"))
-saveRDS(object = DE_XGBoost_Linear_model$finalModel, file = paste0("Models/DE_XGBoost_Linear_model_PSO_", class(DE_XGBoost_Linear_model$finalModel)[1], "_", stringr::str_remove_all(Sys.time(), pattern = ":"),".rds"))
+saveRDS(object = DE_XGBoost_Linear_model, file = paste0("models/DE_XGBoost_Linear_model_PSO_", stringr::str_remove_all(Sys.time(), pattern = ":"),".rds"))
+saveRDS(object = DE_XGBoost_Linear_model$finalModel, file = paste0("models/DE_XGBoost_Linear_model_PSO_", class(DE_XGBoost_Linear_model$finalModel)[1], "_", stringr::str_remove_all(Sys.time(), pattern = ":"),".rds"))
 ```
 
 The best model from the search with the differential evolution algorithm has an average cross-validated RMSE of `r DE_XGBoost_Linear_model$results %>% arrange(RMSE) %>% .[1,] %>% select(RMSE) %>% .[[1]] %>% round(3)`. 
@@ -705,10 +733,10 @@ PSO_model_XGBoost_Linear <- pso::psoptim(
                 trace = 1, #  produce tracing information on the progress of the optimization
                 maxit = max_iter, # maximum number of iterations
                 REPORT = 1, #  frequency for reports
-                trace.stats = T,
+                trace.stats= TRUE,
                 s = pop_size, # Swarm Size,
                 maxit.stagnate = round(0.75*max_iter), # maximum number of iterations without improvement
-                vectorize = T,
+                vectorize= TRUE,
                 type = "SPSO2011" # method used
                 ),
   data = training_set,
@@ -758,7 +786,7 @@ PSO_XGBoost_Linear_model <- caret::train(Strength ~.,
                           data = training_set, 
                           method = "xgbLinear",
                           trControl = train_control,
-                          verbose = F, metric = "RMSE", maximize = FALSE,
+                          verboseFALSE, metric = "RMSE", maximize = FALSE,
                           silent = 1,
                           tuneGrid = PSO_XGBoost_Linear_grid
                           )
@@ -770,8 +798,8 @@ T1-T0
 
 PSO_XGBoost_Linear_model
 
-saveRDS(object = PSO_XGBoost_Linear_model, file = paste0("Models/PSO_XGBoost_Linear_model_", stringr::str_remove_all(Sys.time(), pattern = ":"),".rds"))
-saveRDS(object = PSO_XGBoost_Linear_model$finalModel, file = paste0("Models/PSO_XGBoost_Linear_model_", class(PSO_XGBoost_Linear_model$finalModel)[1], "_", stringr::str_remove_all(Sys.time(), pattern = ":"),".rds"))
+saveRDS(object = PSO_XGBoost_Linear_model, file = paste0("models/PSO_XGBoost_Linear_model_", stringr::str_remove_all(Sys.time(), pattern = ":"),".rds"))
+saveRDS(object = PSO_XGBoost_Linear_model$finalModel, file = paste0("models/PSO_XGBoost_Linear_model_", class(PSO_XGBoost_Linear_model$finalModel)[1], "_", stringr::str_remove_all(Sys.time(), pattern = ":"),".rds"))
 ```
 
 The best model from the search with the particle swarm optimization algorithm has an average cross-validated RMSE of `r PSO_XGBoost_Linear_model$results %>% arrange(RMSE) %>% .[1,] %>% select(RMSE) %>% .[[1]] %>% round(3)`. 
@@ -802,7 +830,7 @@ Summary_Table_Training <- Summary_Table_Training %>%
 # Print table
 Summary_Table_Training %>% 
   kable(align = "c", caption = "Training Set Statistics and Hyperparameter Values of XGBoost Models.") %>% 
-  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = T, position = "center") %>%
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width= TRUE, position = "center") %>%
   kableExtra::footnote(general = paste0("Note:\nSummary statistics obtained using ", CV_folds, "-fold cross validation repeated ", CV_repeats, " times.","\nGrid and Random Search  performed with adaptive resampling."), general_title = "\n ")
 ```
 
@@ -811,55 +839,6 @@ Although there are some considerable differences between the values of hyperpara
 `r Summary_Table_Training %>% arrange(RMSE) %>% .[1,] %>% select(Method) %>% .[[1]]` obtained the lowest RMSE value (`r Summary_Table_Training %>% arrange(RMSE) %>% .[1,] %>% select(RMSE) %>% round(4) %>% .[[1]]`).
 
 ## Performance on Test Set
-
-```{r message=FALSE, warning=FALSE, prompt=FALSE, error=FALSE}
-# Custom functions to plot observed, predicted and residual values for each method
-library(ggplot2, quietly = T, verbose = F)
-
-# Function to plot observed vs predicted values
-predicted_observed_plot <- function(predicted_val, observed_val, residual_val, model_name = "", R_squared, ...) {
-  
-  plot <- ggplot(mapping = aes(x = predicted_val, y = observed_val, col = abs(residual_val))) +
-  geom_point(alpha = 0.9, size = 2) +
-  geom_abline(intercept = 0, slope = 1) +
-    # facet_wrap(~) +
-    labs(title = paste0(model_name, "\nPredicted vs Observed: Test Set"),
-         subtitle = paste0("R-squared: ", R_squared),
-         x = "Predicted",
-         y = "Observed",
-         col = "Absolute Deviation") +
-  theme_bw() +
-  theme(aspect.ratio = 0.9, panel.grid.minor.x = element_blank(), legend.title = element_text(size = 10, face="bold"), legend.text = element_text(size = 9), plot.title = element_text(size=12, face="bold"), axis.title=element_text(size=10, face="bold"), axis.text.x = element_text(angle = 0), legend.position = "none") +
-  # scale_x_continuous(expand = c(0,0)) +
-  # scale_y_continuous(expand = c(0,0)) + 
-  coord_equal() + scale_color_viridis_c(direction = -1)
-
-  return (plot)
-}
-
-# Function to plot residuals
-residuals_plot <- function(predicted_val, residual_val, model_name = "", MAE, RMSE, ...) {
-
-  plot <- ggplot(mapping = aes(x = predicted_val, y = residual_val, col = abs(residual_val))) +
-  geom_point(alpha = 0.9, size = 2) +
-  geom_abline(intercept = 0, slope = 0) +
-    # facet_wrap(~) +
-    labs(
-       title = paste0(model_name, "\nResiduals: Test Set"),
-       subtitle = paste0("RMSE: ", RMSE, ", MAE: ", round(MAE, 3)),
-       x = "Predicted",
-       y = "Residual",
-       col = "Absolute Deviation"
-       ) +
-  theme_bw() +
-  theme(aspect.ratio = 0.9, panel.grid.minor.x = element_blank(), legend.title = element_text(size = 10, face="bold"), legend.text = element_text(size = 9), plot.title = element_text(size=12, face="bold"), axis.title=element_text(size=10, face="bold"), axis.text.x = element_text(angle = 0), legend.position = "none") +
-  # scale_x_continuous(expand = c(0,0)) +
-  # scale_y_continuous(expand = c(0,0)) +
-  coord_equal() + scale_color_viridis_c(direction = -1)
-
-  return (plot)
-}
-```
 
 
 ```{r fig.height=4, fig.width=7, message=FALSE, warning=FALSE}
@@ -872,7 +851,7 @@ test_set$XGBoost_Linear_GS_residual <- test_set$Strength - test_set$XGBoost_Line
 
 # Calculate test set R-squared, RMSE, MAE
 R_squared <- round(cor(test_set$XGBoost_Linear_GS, test_set$Strength), 4)
-RMSE <- signif(RMSE(pred = test_set$XGBoost_Linear_GS, obs = test_set$Strength, na.rm = T), 6)
+RMSE <- signif(RMSE(pred = test_set$XGBoost_Linear_GS, obs = test_set$Strength, na.rm= TRUE), 6)
 MAE <- signif(MAE(pred = test_set$XGBoost_Linear_GS, obs = test_set$Strength), 6)
 
 GS_Test_Set_Statistics <- c(RMSE, MAE, R_squared)
@@ -893,7 +872,7 @@ test_set$XGBoost_Linear_RS_residual <- test_set$Strength - test_set$XGBoost_Line
 
 # Calculate test set R-squared, RMSE, MAE
 R_squared <- round(cor(test_set$XGBoost_Linear_RS, test_set$Strength), 4)
-RMSE <- signif(RMSE(pred = test_set$XGBoost_Linear_RS, obs = test_set$Strength, na.rm = T), 6)
+RMSE <- signif(RMSE(pred = test_set$XGBoost_Linear_RS, obs = test_set$Strength, na.rm= TRUE), 6)
 MAE <- signif(MAE(pred = test_set$XGBoost_Linear_RS, obs = test_set$Strength), 6)
 
 RS_Test_Set_Statistics <- c(RMSE, MAE, R_squared)
@@ -914,7 +893,7 @@ test_set$XGBoost_Linear_GA_residual <- test_set$Strength - test_set$XGBoost_Line
 
 # Calculate test set R-squared, RMSE, MAE
 R_squared <- round(cor(test_set$XGBoost_Linear_GA, test_set$Strength), 4)
-RMSE <- signif(RMSE(pred = test_set$XGBoost_Linear_GA, obs = test_set$Strength, na.rm = T), 6)
+RMSE <- signif(RMSE(pred = test_set$XGBoost_Linear_GA, obs = test_set$Strength, na.rm= TRUE), 6)
 MAE <- signif(MAE(pred = test_set$XGBoost_Linear_GA, obs = test_set$Strength), 6)
 
 GA_Test_Set_Statistics <- c(RMSE, MAE, R_squared)
@@ -935,7 +914,7 @@ test_set$XGBoost_Linear_DE_residual <- test_set$Strength - test_set$XGBoost_Line
 
 # Calculate test set R-squared, RMSE, MAE
 R_squared <- round(cor(test_set$XGBoost_Linear_DE, test_set$Strength), 4)
-RMSE <- signif(RMSE(pred = test_set$XGBoost_Linear_DE, obs = test_set$Strength, na.rm = T), 6)
+RMSE <- signif(RMSE(pred = test_set$XGBoost_Linear_DE, obs = test_set$Strength, na.rm= TRUE), 6)
 MAE <- signif(MAE(pred = test_set$XGBoost_Linear_DE, obs = test_set$Strength), 6)
 
 DE_Test_Set_Statistics <- c(RMSE, MAE, R_squared)
@@ -956,7 +935,7 @@ test_set$XGBoost_Linear_PSO_residual <- test_set$Strength - test_set$XGBoost_Lin
 
 # Calculate test set R-squared, RMSE, MAE
 R_squared <- round(cor(test_set$XGBoost_Linear_PSO, test_set$Strength), 4)
-RMSE <- signif(RMSE(pred = test_set$XGBoost_Linear_PSO, obs = test_set$Strength, na.rm = T), 6)
+RMSE <- signif(RMSE(pred = test_set$XGBoost_Linear_PSO, obs = test_set$Strength, na.rm= TRUE), 6)
 MAE <- signif(MAE(pred = test_set$XGBoost_Linear_PSO, obs = test_set$Strength), 6)
 
 PSO_Test_Set_Statistics <- c(RMSE, MAE, R_squared)
@@ -983,7 +962,7 @@ Summary_Table_Test <- Summary_Table_Test %>% add_column(Method = c("Grid Search"
 # Print table
 Summary_Table_Test %>% 
   kable(align = "c", caption = "Test Set Statistics of XGBoost Models.") %>% 
-  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = T, position = "center") %>%
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width= TRUE, position = "center") %>%
   kableExtra::footnote(general = paste0(""), general_title = "\n ")
 ```
 
